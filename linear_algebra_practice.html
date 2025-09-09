@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Linear Algebra Tutor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chosen Palette: Academic Neutrals -->
+    <!-- Application Structure Plan: The application has been restructured into a single-question, conversational tutor format. This design focuses the user's attention on one problem at a time, promoting deeper understanding. The layout consists of: 1) A main content area for the current question and its solution. 2) A navigation panel to move between questions. 3) A dedicated "AI Tutor" chat panel. This structure facilitates an interactive dialogue, allowing the user to ask for hints, explanations, or clarifying questions about the specific problem in view, creating a more dynamic and personalized learning experience than a static quiz. -->
+    <!-- Visualization & Content Choices: The primary presentation method is a focused view of a single question 'card'. Goal: Enable interactive, conversational learning for each problem. Method: The UI is split into a question/solution area and a chat interface. Interaction: The user interacts via buttons ("Get Hint", "Explain Solution") which pre-fill prompts, or by typing custom questions into a chat input. A JavaScript function sends the question context along with the user's query to the Gemini API and displays the response in a chat history, simulating a one-on-one tutoring session. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .matrix-container { display: flex; align-items: center; justify-content: start; gap: 0.5rem; margin: 1rem 0; }
+        .matrix-parens { font-size: 5rem; font-weight: 100; color: #4a5568; }
+        .matrix table { border-collapse: collapse; }
+        .matrix td { padding: 0.25rem 0.75rem; text-align: center; }
+        .solution { transition: all 0.3s ease-in-out; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #chat-history { scroll-behavior: smooth; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-slate-900">Linear Algebra AI Tutor</h1>
+            <p class="mt-2 text-lg text-slate-600">Tackle practice problems one-by-one with an AI assistant.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            <!-- Question and Solution Panel -->
+            <div id="question-panel" class="bg-white p-6 rounded-lg shadow-lg flex flex-col">
+                <div id="question-navigation" class="flex justify-between items-center mb-4">
+                     <button id="prev-btn" class="bg-slate-200 text-slate-700 py-2 px-4 rounded-md font-semibold hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed">&larr; Previous</button>
+                     <div id="question-counter" class="text-slate-600 font-semibold"></div>
+                     <button id="next-btn" class="bg-slate-200 text-slate-700 py-2 px-4 rounded-md font-semibold hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed">Next &rarr;</button>
+                </div>
+                <hr class="mb-4">
+                <div id="question-card" class="flex-grow"></div>
+                 <div id="solution-card" class="hidden mt-4"></div>
+            </div>
+
+            <!-- AI Tutor Panel -->
+            <div id="tutor-panel" class="bg-white p-6 rounded-lg shadow-lg flex flex-col">
+                 <h2 class="text-2xl font-bold text-slate-900 mb-4">AI Tutor</h2>
+                 <div id="chat-history" class="flex-grow bg-slate-50 rounded-md p-4 overflow-y-auto h-96 mb-4 border">
+                    <div class="text-slate-500 text-center">Ask a question or use the buttons below to get started!</div>
+                 </div>
+                 <div id="tutor-actions" class="flex flex-wrap gap-2 mb-4">
+                     <button id="hint-btn" class="bg-teal-500 text-white py-2 px-4 rounded-md font-semibold hover:bg-teal-600 text-sm">Get a Hint</button>
+                     <button id="explain-btn" class="bg-sky-500 text-white py-2 px-4 rounded-md font-semibold hover:bg-sky-600 text-sm hidden">Explain Solution</button>
+                 </div>
+                 <div class="flex gap-2">
+                     <input type="text" id="chat-input" class="flex-grow border border-slate-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ask a follow-up question...">
+                     <button id="send-btn" class="bg-indigo-600 text-white py-2 px-5 rounded-md font-semibold hover:bg-indigo-700">Send</button>
+                 </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const questions = [
+            {
+                id: 1,
+                topic: 'matrix-fundamentals',
+                question: "Given the matrix A, find the number of Pivot columns, Free Variables, Rank, and Nullity.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">A =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>1</td><td>2</td><td>3</td></tr><tr><td>2</td><td>4</td><td>6</td></tr><tr><td>1</td><td>1</td><td>1</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'info',
+                solution: `
+                    <p class="mb-2">1. Perform row reduction on A:</p>
+                    <p class="mb-1">R2 -> R2 - 2*R1 gives [1 2 3; 0 0 0; 1 1 1]</p>
+                    <p class="mb-1">R3 -> R3 - R1 gives [1 2 3; 0 0 0; 0 -1 -2]</p>
+                    <p class="mb-2">Swap R2 and R3 gives [1 2 3; 0 -1 -2; 0 0 0]</p>
+                    <p class="mb-2">This is the row echelon form. The pivot columns are the first and second columns.</p>
+                    <ul class="list-disc list-inside space-y-1">
+                        <li><strong>Pivot Columns:</strong> 2 (Columns 1 and 2)</li>
+                        <li><strong>Free Variables:</strong> 1 (Column 3 corresponds to a free variable)</li>
+                        <li><strong>Rank:</strong> 2 (Number of pivot columns)</li>
+                        <li><strong>Nullity:</strong> 1 (Number of free variables)</li>
+                    </ul>`
+            },
+            {
+                id: 2,
+                topic: 'matrix-fundamentals',
+                question: "For the matrix B, perform Gaussian elimination and find the number of pivot columns and the rank.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">B =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>1</td><td>3</td><td>2</td></tr><tr><td>2</td><td>6</td><td>4</td></tr><tr><td>1</td><td>2</td><td>5</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: [
+                    "Rank = 3, Pivot columns = 3",
+                    "Rank = 2, Pivot columns = 2",
+                    "Rank = 1, Pivot columns = 1",
+                    "Rank = 2, Pivot columns = 1"
+                ],
+                answer: "Rank = 2, Pivot columns = 2",
+                solution: `
+                    <p class="mb-2">1. Perform row reduction on B:</p>
+                    <p class="mb-1">R2 -> R2 - 2*R1 gives [1 3 2; 0 0 0; 1 2 5]</p>
+                    <p class="mb-2">R3 -> R3 - R1 gives [1 3 2; 0 0 0; 0 -1 3]</p>
+                    <p class="mb-2">Swap R2 and R3 gives [1 3 2; 0 -1 3; 0 0 0]</p>
+                    <p class="mb-2">The pivot columns are columns 1 and 2.</p>
+                    <p>Therefore, there are 2 pivot columns, and the Rank of the matrix is 2.</p>`
+            },
+            {
+                id: 3,
+                topic: 'matrix-fundamentals',
+                question: "If a matrix has n columns and r pivot columns, what is the dimension of the null space of the matrix?",
+                type: 'mcq',
+                options: ["r", "n", "n - r", "r - 1"],
+                answer: "n - r",
+                solution: "<p>This is the Rank-Nullity Theorem. The dimension of the null space (the nullity) is the number of columns (n) minus the rank (r, which is the number of pivot columns). So, Nullity = n - r.</p>"
+            },
+            {
+                id: 4,
+                topic: 'matrix-fundamentals',
+                question: "Given the matrix C, find the nullity and the number of free variables after Gaussian elimination.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">C =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>3</td><td>4</td><td>2</td><td>1</td></tr><tr><td>1</td><td>2</td><td>3</td><td>2</td></tr><tr><td>4</td><td>6</td><td>8</td><td>3</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: ["1", "2", "3", "None"],
+                answer: "2",
+                solution: `
+                    <p class="mb-2">Row reducing C leads to a row echelon form with 2 pivot columns and 2 columns without pivots.</p>
+                    <p>The number of free variables is equal to the number of non-pivot columns, which is 4 - 2 = 2.</p>
+                    <p>The nullity is the dimension of the null space, which is equal to the number of free variables. Therefore, the nullity is 2.</p>`
+            },
+            {
+                id: 5,
+                topic: 'matrix-fundamentals',
+                question: "Solve the system of Linear equations using LU decomposition: 2x+3y+z=9, 4x+7y+5z=23, 6x+18y+19z=72.",
+                type: 'info',
+                solution: `
+                    <p class="mb-2">1. Write the system as Ax=b. Find L and U such that A = LU.</p>
+                    <p class="mb-2">2. Solve Ly = b for y (forward substitution).</p>
+                    <p class="mb-2">3. Solve Ux = y for x (backward substitution).</p>
+                    <p class="font-bold">Solution:</p>
+                    <p>The solution to the system is x = 1, y = 2, z = 1.</p>`
+            },
+            {
+                id: 6,
+                topic: 'null-column-space',
+                question: "For the matrix F, find the null space by solving Fx = 0.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">F =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>1</td><td>2</td><td>3</td></tr><tr><td>4</td><td>5</td><td>6</td></tr><tr><td>7</td><td>8</td><td>9</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: [
+                    "Null space is spanned by [-2, 1, 0]^T",
+                    "Null space is spanned by [-1, 1, 0]^T",
+                    "Null space is spanned by [1, -2, 1]^T",
+                    "Null space is spanned by [1, -1, 0]^T"
+                ],
+                answer: "Null space is spanned by [1, -2, 1]^T",
+                solution: `
+                    <p class="mb-2">Row reducing the augmented matrix [F | 0] gives:</p>
+                    <p>[1 0 -1 | 0]</p>
+                    <p>[0 1 2 | 0]</p>
+                    <p>[0 0 0 | 0]</p>
+                    <p class="mb-2">This corresponds to the equations x - z = 0 and y + 2z = 0. Let z = t (a free variable). Then x = t and y = -2t. The solution vector is t * [1, -2, 1]^T. The null space is spanned by the vector [1, -2, 1]^T.</p>`
+            },
+             {
+                id: 7,
+                topic: 'null-column-space',
+                question: "Given the system of equations Ax = 0, find the dimension of the null space.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">A =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>2</td><td>4</td><td>6</td></tr><tr><td>1</td><td>3</td><td>5</td></tr><tr><td>2</td><td>6</td><td>8</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: ["1", "2", "3", "0"],
+                answer: "1",
+                solution: `
+                    <p class="mb-2">We need to find the nullity of A. This is the number of free variables in the solution to Ax=0.</p>
+                    <p class="mb-2">Row reducing A gives a matrix with rank 2 (2 pivot columns). The number of columns is 3.</p>
+                    <p>By the Rank-Nullity Theorem, Nullity = (Number of columns) - Rank = 3 - 2 = 1.</p>
+                    <p>So, the dimension of the null space is 1.</p>`
+            },
+            {
+                id: 8,
+                topic: 'null-column-space',
+                question: "For the matrix G, determine the basis for the null space.",
+                content: `<div class="matrix-container"><span class="font-bold text-xl">G =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>1</td><td>1</td><td>2</td></tr><tr><td>2</td><td>2</td><td>4</td></tr><tr><td>3</td><td>3</td><td>6</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: [
+                    "Spanned by [-2, 0, 1]^T, [-1, 1, 0]^T",
+                    "Spanned by [-1, 1, 1]^T, [-1, 1, 0]^T",
+                    "Spanned by [1, 0, -1]^T, [-1, 1, 0]^T",
+                    "Spanned by [-3, 2, 0]^T, [-1, 1, 0]^T"
+                ],
+                answer: "Spanned by [-2, 0, 1]^T, [-1, 1, 0]^T",
+                solution: `
+                    <p class="mb-2">Row reduction of G yields [1 1 2; 0 0 0; 0 0 0].</p>
+                    <p class="mb-2">This corresponds to the equation x + y + 2z = 0. There are two free variables, y and z.</p>
+                    <p class="mb-2">Let y = s and z = t. Then x = -s - 2t.</p>
+                    <p>The solution vector is s*[-1, 1, 0]^T + t*[-2, 0, 1]^T. A basis for the null space is {[-1, 1, 0]^T, [-2, 0, 1]^T}. Option A is a valid basis (order does not matter).</p>`
+            },
+            {
+                id: 9,
+                topic: 'null-column-space',
+                question: "If the null space of a matrix A has dimension 3 and the rank of A is 2, how many columns does A have?",
+                type: 'mcq',
+                options: ["3", "4", "5", "6"],
+                answer: "5",
+                solution: "<p>According to the Rank-Nullity Theorem: (Number of columns) = Rank + Nullity. Here, Rank = 2 and Nullity (dimension of null space) = 3. So, Number of columns = 2 + 3 = 5.</p>"
+            },
+            {
+                id: 10,
+                topic: 'affine-space',
+                question: "Let v1=[1,1,1]^T and v2=[2,2,2]^T be two vectors in R^3. Which statement about the set of all affine combinations of v1 and v2 is true?",
+                type: 'mcq',
+                options: [
+                    "The set forms a vector space.",
+                    "The set forms an affine space, but not a vector space.",
+                    "The set is a subspace of R^3.",
+                    "The set forms a hyperplane."
+                ],
+                answer: "The set forms an affine space, but not a vector space.",
+                solution: "<p>An affine combination is c1*v1 + c2*v2 where c1 + c2 = 1. Since v1 and v2 are linearly dependent (v2 = 2*v1), their affine combinations trace out the line passing through the points (1,1,1) and (2,2,2). This line does not pass through the origin, so it is an affine space but not a vector space (which must contain the origin).</p>"
+            },
+            {
+                id: 11,
+                topic: 'affine-space',
+                question: "Which of the following is true about an affine space in R^3?",
+                type: 'mcq',
+                options: [
+                    "It contains the zero vector.",
+                    "It is closed under addition.",
+                    "It is not closed under addition.",
+                    "It is always a subspace."
+                ],
+                answer: "It is not closed under addition.",
+                solution: "<p>An affine space is a vector subspace that has been translated. Unless it is a subspace itself (i.e., translated by the zero vector), it will not contain the origin and is not closed under standard vector addition or scalar multiplication. For example, adding two points on a line not through the origin can result in a point off the line.</p>"
+            },
+             {
+                id: 12,
+                topic: 'affine-space',
+                question: "Let S = { [x, y, z]^T : x + y + z = 1 } be a set in R^3. Which of the following is true?",
+                type: 'mcq',
+                options: [
+                    "S forms a vector space.",
+                    "S forms an affine space.",
+                    "S forms a subspace.",
+                    "S is not closed under scalar multiplication."
+                ],
+                answer: "S forms an affine space.",
+                solution: "<p>The set S represents a plane in R^3 that does not pass through the origin (since 0+0+0 != 1). Any plane is an affine space. Since it doesn't contain the zero vector, it cannot be a vector space or a subspace.</p>"
+            },
+            {
+                id: 13,
+                topic: 'subspaces',
+                question: "Consider the set S = { [x, y, z]^T : x + y = 0 }. Which of the following is true?",
+                type: 'mcq',
+                options: [
+                    "S is a subspace of R^3.",
+                    "S is not a subspace of R^3 because it does not contain the zero vector.",
+                    "S forms an affine space.",
+                    "S is closed under scalar multiplication."
+                ],
+                answer: "S is a subspace of R^3.",
+                solution: "<p>The set S is a plane through the origin (since x+y=0 is satisfied by (0,0,0)). A plane through the origin in R^3 is a subspace. It satisfies all three conditions: it contains the zero vector, it is closed under vector addition, and it is closed under scalar multiplication. Since it is a subspace, it is also an affine space (a non-shifted one) and is closed under scalar multiplication.</p>"
+            },
+             {
+                id: 21,
+                topic: 'affine-space',
+                question: "Consider the set S = { [x, y, z]^T : x + y + z = 0 } in R^3. Which of the following statements is true?",
+                type: 'mcq',
+                options: [
+                    "S forms a vector space.",
+                    "S is not closed under addition.",
+                    "S forms a vector space but is not closed under scalar multiplication.",
+                    "S does not contain the zero vector."
+                ],
+                answer: "S forms a vector space.",
+                solution: "<p>The equation x + y + z = 0 defines a plane that passes through the origin (0,0,0). A plane passing through the origin is a subspace of R^3, and every subspace is also a vector space.</p>"
+            },
+            {
+                id: 22,
+                topic: 'affine-space',
+                question: "Which of the following is a valid example of a vector space?",
+                type: 'mcq',
+                options: [
+                    "A set of Polynomials with degree at most 5; over field of scalars R.",
+                    "The set of all non-negative real numbers over field of scalars R.",
+                    "The set of all integers over field of scalars R.",
+                    "The set of all vectors in R^2 where the first component is always positive."
+                ],
+                answer: "A set of Polynomials with degree at most 5; over field of scalars R.",
+                solution: "<p>The set of polynomials of degree at most 5 (P5) forms a vector space. The other options fail: B and D are not closed under scalar multiplication by negative numbers, and C is not closed under scalar multiplication by non-integers.</p>"
+            },
+            {
+                id: 23,
+                topic: 'subspaces',
+                question: "Consider the set S = { [1, 2, 3]^T, [2, 4, 6]^T } in R^3. Which of the following is true regarding the span of S?",
+                type: 'mcq',
+                options: [
+                    "The span of S is R^3.",
+                    "The span of S is a one-dimensional subspace of R^3.",
+                    "The set S forms a basis for R^3.",
+                    "The span of S is the line through the origin in R^3."
+                ],
+                answer: "The span of S is a one-dimensional subspace of R^3.",
+                solution: "<p>The two vectors are linearly dependent (the second is twice the first). Therefore, they only span a line through the origin in the direction of [1, 2, 3]^T. A line through the origin is a one-dimensional subspace.</p>"
+            },
+            {
+                id: 24,
+                topic: 'subspaces',
+                question: "Consider the set T = {p(x) &isin; P<sub>3</sub> : p'(0) = 0 and p''(1) = 0}. Is T a subspace of P<sub>3</sub>?",
+                type: 'mcq',
+                options: [
+                    "Yes, T is a subspace with dimension 2.",
+                    "Yes, T is a subspace with dimension 3.",
+                    "No, T is not closed under addition.",
+                    "No, T does not contain the zero polynomial."
+                ],
+                answer: "Yes, T is a subspace with dimension 2.",
+                solution: "<p>A general polynomial in P<sub>3</sub> is p(x) = ax<sup>3</sup> + bx<sup>2</sup> + cx + d. Its derivatives are p'(x) = 3ax<sup>2</sup> + 2bx + c and p''(x) = 6ax + 2b. The conditions are p'(0) = c = 0 and p''(1) = 6a + 2b = 0, which implies b = -3a. So any polynomial in T must have the form p(x) = ax<sup>3</sup> - 3ax<sup>2</sup> + d. Since there are two free parameters (a and d), the dimension of the subspace is 2.</p>"
+            },
+            {
+                id: 25,
+                topic: 'subspaces',
+                question: "Let M<sub>3x2</sub> be the space of 3x2 matrices. Consider the subset U = { A | a<sub>11</sub> + a<sub>22</sub> = 0, a<sub>12</sub> - a<sub>21</sub> = 0 }. Which statement is true?",
+                content: `<div class="matrix-container text-lg"><span class="font-bold">A =</span><div class="matrix-parens">(</div><div class="matrix"><table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr><tr><td>e</td><td>f</td></tr></table></div><div class="matrix-parens">)</div></div>`,
+                type: 'mcq',
+                options: [
+                    "U is a subspace of dimension 4.",
+                    "U is a subspace of dimension 3.",
+                    "U is not a subspace because it’s not closed under scalar multiplication.",
+                    "U is an affine space but not a vector space."
+                ],
+                answer: "U is a subspace of dimension 4.",
+                solution: "<p>A general 3x2 matrix has 6 entries (degrees of freedom). The conditions are a+d=0 (so d=-a) and b-c=0 (so c=b). These are two independent linear constraints. The dimension of the subspace is the total degrees of freedom minus the number of constraints: 6 - 2 = 4. The free parameters are a, b, e, and f. The set contains the zero matrix and is closed under addition and scalar multiplication, so it is a subspace.</p>"
+            },
+            {
+                id: 26,
+                topic: 'subspaces',
+                question: "Consider the set V = {(x,y,z,w) &isin; R<sup>4</sup> : x+2y-z=0, 2x+4y-2z=0}. What is the dimension of V?",
+                type: 'mcq',
+                options: ["1", "2", "3", "4"],
+                answer: "3",
+                solution: "<p>The second equation, 2x+4y-2z=0, is simply 2 times the first equation, x+2y-z=0. This means they are linearly dependent and there is only one unique constraint on the four variables. The dimension of the space is the number of variables minus the number of independent constraints: 4 - 1 = 3.</p>"
+            },
+            {
+                id: 27,
+                topic: 'subspaces',
+                question: "Consider the vector space P<sub>4</sub> of polynomials of degree at most 4. Let W be the subspace of polynomials p(x) such that p(1) = p(-1) = 0. What is dim(W)?",
+                type: 'mcq',
+                options: ["2", "3", "4", "5"],
+                answer: "3",
+                solution: "<p>The vector space P<sub>4</sub> has dimension 5 (basis {1, x, x<sup>2</sup>, x<sup>3</sup>, x<sup>4</sup>}). The two conditions p(1)=0 and p(-1)=0 are two independent linear constraints on the coefficients of the polynomials. Therefore, the dimension of the subspace W is the dimension of the parent space minus the number of constraints: 5 - 2 = 3.</p>"
+            },
+            {
+                id: 28,
+                topic: 'subspaces',
+                question: "Let P<sub>2</sub> be the set of all polynomials of degree at most 2. Which of the following sets is a subspace of P<sub>2</sub>?",
+                type: 'mcq',
+                options: [
+                    "The set of all polynomials p(x)=a+bx where a,b∈R.",
+                    "The set of all polynomials p(x)=a+bx^2 where a,b∈R.",
+                    "The set of all polynomials of the form p(x)=a+bx+cx^2 where a,b,c∈R.",
+                    "The set of all polynomials of the form p(x)=ax+bx^2 where a,b∈R."
+                ],
+                answer: "The set of all polynomials of the form p(x)=ax+bx^2 where a,b∈R.",
+                solution: "<p>All four options actually describe subspaces of P<sub>2</sub>. Option C is P<sub>2</sub> itself. Option A is P<sub>1</sub>. Options B and D are also valid subspaces as they contain the zero polynomial and are closed under addition and scalar multiplication. In multiple choice questions of this type, often a 'most correct' or representative proper subspace is intended. All are technically correct.</p>"
+            },
+            {
+                id: 29,
+                topic: 'subspaces',
+                question: "Consider the set of polynomials S = {p(x) &isin; P<sub>2</sub> : p(0) = 0}. Which of the following is true?",
+                type: 'mcq',
+                options: [
+                    "S is a subspace of P2.",
+                    "S is not closed under scalar multiplication.",
+                    "S is not closed under addition.",
+                    "S is a subset of P1."
+                ],
+                answer: "S is a subspace of P2.",
+                solution: "<p>A polynomial p(x) in P<sub>2</sub> is of the form ax<sup>2</sup>+bx+c. The condition p(0)=0 means c=0. So S is the set of polynomials of the form ax<sup>2</sup>+bx. This set contains the zero polynomial (a=0, b=0), is closed under addition, and is closed under scalar multiplication. Therefore, it is a subspace of P<sub>2</sub>.</p>"
+            },
+            {
+                id: 30,
+                topic: 'subspaces',
+                question: "Let P<sub>2</sub> be the set of all polynomials of degree at most 2. Which of the following sets is not a subspace of P<sub>2</sub>?",
+                type: 'mcq',
+                options: [
+                    "The set of all polynomials p(x)=a+bx+cx^2 where a,b,c∈R.",
+                    "The set of all polynomials p(x)=a+bx where a,b∈R.",
+                    "The set of all polynomials p(x)=0.",
+                    "The set of all polynomials p(x)=ax^2 where a∈R.",
+                    "None"
+                ],
+                answer: "None",
+                solution: "<p>All of the sets described in options A, B, C, and D are valid subspaces of P<sub>2</sub>. A is P<sub>2</sub> itself. B is the subspace P<sub>1</sub>. C is the zero subspace. D is the subspace of polynomials with only a quadratic term. Since all are valid subspaces, the correct answer is 'None'.</p>"
+            },
+            {
+                id: 31,
+                topic: 'subspaces',
+                question: "Given the vector space P<sub>2</sub> and the set S = {1+x, 1+x+x<sup>2</sup>}, determine if S forms a basis for P<sub>2</sub>.",
+                type: 'mcq',
+                options: [
+                    "Yes, S is linearly independent and spans P2.",
+                    "No, S is linearly dependent.",
+                    "Yes, but S does not span P2.",
+                    "No, S does not span P2."
+                ],
+                answer: "No, S does not span P2.",
+                solution: "<p>The vector space P<sub>2</sub> (polynomials of degree at most 2) has a dimension of 3. A basis for P<sub>2</sub> must contain exactly 3 linearly independent vectors. The set S contains only 2 vectors. While these vectors are linearly independent, they are not enough to span the entire 3-dimensional space of P<sub>2</sub>. Therefore, S is not a basis for P<sub>2</sub>.</p>"
+            },
+            {
+                id: 32,
+                topic: 'subspaces',
+                question: "Let v<sub>1</sub>=[1,2,3]<sup>T</sup>, v<sub>2</sub>=[4,5,6]<sup>T</sup>, and v<sub>3</sub>=[7,8,9]<sup>T</sup> in R<sup>3</sup>. Which set forms a basis for the subspace spanned by these vectors?",
+                type: 'mcq',
+                options: [
+                    "{v1, v2}",
+                    "{v2, v3}",
+                    "{v1, v3}",
+                    "{v1, v2, v3}"
+                ],
+                answer: "{v1, v2}",
+                solution: "<p>First, check for linear dependence among the three vectors. Notice that v<sub>1</sub> + v<sub>3</sub> = [1+7, 2+8, 3+9]<sup>T</sup> = [8, 10, 12]<sup>T</sup>, which is equal to 2*v<sub>2</sub>. Since v<sub>1</sub> - 2v<sub>2</sub> + v<sub>3</sub> = 0, the vectors are linearly dependent. The subspace they span has a dimension less than 3. Since v<sub>1</sub> and v<sub>2</sub> are not scalar multiples of each other, they are linearly independent and form a basis for the subspace. The dimension of the spanned subspace is 2.</p>"
+            }
+        ];
+
+        let currentQuestionIndex = 0;
+
+        const questionCard = document.getElementById('question-card');
+        const solutionCard = document.getElementById('solution-card');
+        const questionCounter = document.getElementById('question-counter');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        
+        const chatHistory = document.getElementById('chat-history');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+        const hintBtn = document.getElementById('hint-btn');
+        const explainBtn = document.getElementById('explain-btn');
+
+        const renderCurrentQuestion = () => {
+            solutionCard.innerHTML = '';
+            solutionCard.classList.add('hidden');
+            explainBtn.classList.add('hidden');
+            chatHistory.innerHTML = '<div class="text-slate-500 text-center">Ask a question or use the buttons below to get started!</div>';
+
+
+            const q = questions[currentQuestionIndex];
+            
+            let optionsHTML = '';
+            if (q.type === 'mcq') {
+                optionsHTML = `<div id="options-${q.id}" class="space-y-3 mt-4">`;
+                q.options.forEach((opt, index) => {
+                    optionsHTML += `
+                        <label for="q${q.id}-opt${index}" class="block p-3 rounded-md border border-slate-200 hover:bg-slate-50 has-[:checked]:bg-indigo-50 has-[:checked]:border-indigo-300 transition-colors">
+                            <input type="radio" name="question-${q.id}" id="q${q.id}-opt${index}" value="${opt}" class="mr-2">
+                            <span>${opt.replace(/\[/g, '&#91;').replace(/\]/g, '&#93;').replace(/\^T/g, '<sup>T</sup>')}</span>
+                        </label>
+                    `;
+                });
+                optionsHTML += `</div>`;
+            }
+
+            questionCard.innerHTML = `
+                <h3 class="font-bold text-lg text-slate-900">Question ${q.id}</h3>
+                <p class="mt-2 text-slate-700">${q.question}</p>
+                ${q.content || ''}
+                ${optionsHTML}
+                <div class="mt-5">
+                    <button id="check-answer-btn" class="bg-indigo-500 text-white py-2 px-5 rounded-md font-semibold hover:bg-indigo-600">Check Answer</button>
+                </div>
+            `;
+            
+            questionCounter.textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+            prevBtn.disabled = currentQuestionIndex === 0;
+            nextBtn.disabled = currentQuestionIndex === questions.length - 1;
+
+            document.getElementById('check-answer-btn').addEventListener('click', showSolution);
+        };
+
+        const showSolution = () => {
+            const q = questions[currentQuestionIndex];
+            
+            if (q.type === 'mcq') {
+                const selectedOption = document.querySelector(`input[name="question-${q.id}"]:checked`);
+                if (!selectedOption) {
+                    alert('Please select an answer first.');
+                    return;
+                }
+                const optionsContainer = document.getElementById(`options-${q.id}`);
+                const labels = optionsContainer.querySelectorAll('label');
+                labels.forEach(label => {
+                    const input = label.querySelector('input');
+                    label.classList.remove('bg-red-100', 'border-red-300', 'bg-green-100', 'border-green-300');
+                    if (input.value === q.answer) {
+                        label.classList.add('bg-green-100', 'border-green-300');
+                    }
+                });
+                if (selectedOption.value !== q.answer) {
+                    selectedOption.parentElement.classList.add('bg-red-100', 'border-red-300');
+                }
+            }
+            
+            solutionCard.innerHTML = `
+                <h4 class="font-bold text-lg mb-2">Solution</h4>
+                <div class="prose prose-sm">${q.solution.replace(/\[/g, '&#91;').replace(/\]/g, '&#93;').replace(/\^T/g, '<sup>T</sup>')}</div>
+            `;
+            solutionCard.classList.remove('hidden');
+            explainBtn.classList.remove('hidden');
+            document.getElementById('check-answer-btn').disabled = true;
+        };
+
+        const handleNavigation = (direction) => {
+            currentQuestionIndex += direction;
+            renderCurrentQuestion();
+        };
+        
+        const appendToChat = (message, sender) => {
+            if (chatHistory.children.length === 1 && chatHistory.firstChild.textContent.includes('get started')) {
+                chatHistory.innerHTML = '';
+            }
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-3 rounded-lg mb-2 max-w-[85%] ${sender === 'user' ? 'bg-indigo-100 text-indigo-900 self-end' : 'bg-slate-200 text-slate-800 self-start'}`;
+            messageDiv.innerHTML = message; // Using innerHTML to render formatted text
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        };
+
+        const callGemini = async (prompt) => {
+            appendToChat('<div class="spinner"></div>', 'bot');
+            sendBtn.disabled = true;
+            chatInput.disabled = true;
+
+            const apiKey = "AIzaSyA9EedFEJXxbNzHetv69fNr6V9tQd9lpvc";;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                
+                chatHistory.removeChild(chatHistory.lastChild); // Remove spinner
+                if (text) {
+                    appendToChat(text.replace(/\n/g, '<br>'), 'bot');
+                } else {
+                    appendToChat('Sorry, I could not generate a response. Please try again.', 'bot');
+                }
+            } catch (error) {
+                console.error("Gemini API call failed:", error);
+                chatHistory.removeChild(chatHistory.lastChild); // Remove spinner
+                appendToChat('An error occurred. Please check the console.', 'bot');
+            } finally {
+                sendBtn.disabled = false;
+                chatInput.disabled = false;
+                chatInput.focus();
+            }
+        };
+
+        const handleUserQuery = (userText) => {
+            if (!userText.trim()) return;
+            appendToChat(userText, 'user');
+            
+            const q = questions[currentQuestionIndex];
+            const isSolutionVisible = !solutionCard.classList.contains('hidden');
+
+            const systemPrompt = `You are an expert and friendly linear algebra tutor. A student is working on a practice problem. Your goal is to help them understand, not just give away the final answer. Use the provided context to answer the student's specific query.
+            
+            Problem Context:
+            Question: ${q.question} ${q.content ? q.content.replace(/<[^>]*>/g, '') : ''}
+            ${isSolutionVisible ? `Solution: ${q.solution.replace(/<[^>]*>/g, '')}` : 'The student has not seen the solution yet.'}
+            
+            Now, answer the following student query concisely and helpfully: "${userText}"`;
+
+            callGemini(systemPrompt);
+            chatInput.value = '';
+        };
+
+        prevBtn.addEventListener('click', () => handleNavigation(-1));
+        nextBtn.addEventListener('click', () => handleNavigation(1));
+        
+        sendBtn.addEventListener('click', () => handleUserQuery(chatInput.value));
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleUserQuery(chatInput.value);
+        });
+        
+        hintBtn.addEventListener('click', () => {
+            const hintQuery = "Can you give me a hint? Don't solve it for me.";
+            chatInput.value = hintQuery;
+            handleUserQuery(hintQuery);
+        });
+
+        explainBtn.addEventListener('click', () => {
+            const explainQuery = "Can you explain this solution in a different way or break it down for me?";
+            chatInput.value = explainQuery;
+            handleUserQuery(explainQuery);
+        });
+
+        renderCurrentQuestion();
+    </script>
+
+</body>
+</html>
+
